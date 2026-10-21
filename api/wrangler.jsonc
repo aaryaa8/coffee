@@ -1,0 +1,10 @@
+{
+  // The shared Sip Log store, served at https://coffee-api.aaryaa-kamdar.workers.dev
+  "name": "coffee-api",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "LOG", "class_name": "SipLog" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SipLog"] }]
+}

@@ -10,8 +10,6 @@ function read() {
 export function createLocalStore() {
   return {
     kind: "local",
-    needsUnlock: () => false,
-    async unlock() { return true; },
     async load() { return normalize(read()); },
     async apply(op, ...args) {
       try {
