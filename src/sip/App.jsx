@@ -603,7 +603,7 @@ export default function App() {
     return ok;
   };
   const chooseMe = (k) => { setMe(k); saveMe(k); };
-  const deleteEntry = async (e) => { if (await act("deleteEntry", e.id)) flash("Deleted"); };
+  const deleteEntry = async (e) => { if (await act("deleteEntry", e)) flash("Deleted"); };
 
   const shell = (children) => (
     <div style={{ fontFamily: FONT, background: C.foam, minHeight: "100vh", color: C.ink }}>

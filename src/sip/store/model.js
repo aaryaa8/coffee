@@ -16,7 +16,7 @@ export const ops = {
     entries: [...s.entries.filter((e) => e.id !== entry.id), entry],
   }),
   addEntry: (s, entry) => ({ ...s, entries: [...s.entries.filter((e) => e.id !== entry.id), entry] }),
-  deleteEntry: (s, id) => ({ ...s, entries: s.entries.filter((e) => e.id !== id) }),
+  deleteEntry: (s, entry) => ({ ...s, entries: s.entries.filter((e) => e.id !== entry.id) }),
 };
 
 /** Sorts newest first, and hides a running sip that was already saved as an entry. */
