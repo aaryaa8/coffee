@@ -1,3 +1,4 @@
+import "@fontsource/anton/latin-400.css";
 import { dayKey, shiftDay, fmtTime, deviceTz } from "../sip/time.js";
 
 /* ---------- Coffee rings ----------

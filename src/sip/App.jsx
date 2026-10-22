@@ -20,6 +20,8 @@ const C = {
 };
 const PCOL = { p1: C.espresso, p2: C.caramel };
 const FONT = `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+/* Anton for titles and big numbers; the system sans keeps buttons and small text easy to read. */
+const DISPLAY = { fontFamily: `"Anton", Impact, "Arial Narrow", sans-serif`, fontWeight: 400, letterSpacing: ".01em" };
 
 /* ---------- helpers ---------- */
 const DRINKS = {
@@ -122,7 +124,7 @@ function Setup({ onSave }) {
   return (
     <div style={{ padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}><Cup steam size={84} /></div>
-      <h1 style={{ textAlign: "center", fontSize: 28, fontWeight: 600, margin: "8px 0 4px", color: C.ink }}>Sip Log</h1>
+      <h1 style={{ ...DISPLAY, textAlign: "center", fontSize: 44, margin: "8px 0 4px", color: C.ink }}>Sip Log</h1>
       <p style={{ textAlign: "center", color: C.dim, margin: "0 0 24px" }}>
         Who is logging coffees? You can change these later.
       </p>
@@ -268,7 +270,7 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
           <div style={{ color: C.dim, fontSize: 15, marginTop: 4 }}>
             {mine.drink} · {mine.oz} oz · {mine.shots} {mine.shots === 1 ? "shot" : "shots"}
           </div>
-          <div style={{ fontSize: 64, fontWeight: 500, color: C.ink, fontVariantNumeric: "tabular-nums", letterSpacing: -1, margin: "6px 0" }}>
+          <div style={{ ...DISPLAY, fontSize: 72, color: C.ink, fontVariantNumeric: "tabular-nums", margin: "6px 0" }}>
             {fmtClock(secs)}
           </div>
           <div style={{ color: C.dim, fontSize: 14 }}>Started {fmtTime(mine.start)}</div>
@@ -498,7 +500,7 @@ function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
           return (
             <div key={k} style={{ ...card, flex: 1, minWidth: 0 }}>
               <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{names[i]}</div>
-              <div style={{ fontSize: 36, fontWeight: 500, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
+              <div style={{ ...DISPLAY, fontSize: 40, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
               <div style={{ color: C.dim, fontSize: 13 }}>
                 {theirs.reduce((a, e) => a + e.oz, 0)} oz · {plural(theirs.reduce((a, e) => a + e.shots, 0), "shot")}
               </div>
@@ -589,7 +591,7 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
           return (
             <div key={k} style={{ ...card, flex: 1, minWidth: 0 }}>
               <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{names[i]}</div>
-              <div style={{ fontSize: 34, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
+              <div style={{ ...DISPLAY, fontSize: 40, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
               <div style={{ color: C.dim, fontSize: 13 }}>coffees this week</div>
               <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
                 Avg sip: <b>{fmtDur(avg(durs))}</b><br />
@@ -620,7 +622,7 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
       </div>
 
       <div style={{ ...card, marginTop: 14, display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span style={{ fontSize: 28, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{together}</span>
+        <span style={{ ...DISPLAY, fontSize: 32, fontVariantNumeric: "tabular-nums" }}>{together}</span>
         <span style={{ fontSize: 14, color: C.dim }}>
           {together === 1 ? "time you sipped together this week" : "times you sipped together this week"}
         </span>
@@ -776,7 +778,7 @@ export default function App() {
     return shell(
       <div style={{ padding: 20, textAlign: "center" }}>
         <div style={{ marginTop: 24 }}><Cup steam size={84} /></div>
-        <h1 style={{ fontSize: 28, fontWeight: 600, color: C.ink, margin: "8px 0 20px" }}>Who's sipping?</h1>
+        <h1 style={{ ...DISPLAY, fontSize: 44, color: C.ink, margin: "8px 0 20px" }}>Who's sipping?</h1>
         <Big onClick={() => chooseMe("p1")}>{names[0]}</Big>
         <div style={{ height: 12 }} />
         <Big tone="caramel" onClick={() => chooseMe("p2")}>{names[1]}</Big>
@@ -790,7 +792,7 @@ export default function App() {
       <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${C.rule}` }}>
         <Cup steam={!!active[me]} size={36} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>Sip Log</div>
+          <div style={{ ...DISPLAY, fontSize: 24, lineHeight: 1.1 }}>Sip Log</div>
           <div style={{ fontSize: 13, color: C.dim }}>Logging as {nameOf(names, me)}</div>
         </div>
         <button
