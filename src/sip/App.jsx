@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { store } from "./store/index.js";
 import { newId } from "./store/model.js";
 import { getMe, setMe as saveMe, getCache, setCache } from "./device.js";
-import { deviceTz, dayKey, shiftDay, weekdayShort, dateLabel, fmtTime, tzShort } from "./time.js";
+import { deviceTz, dayKey, shiftDay, weekdayShort, dateLabel, fmtTime, fmtTime24, tzShort, zonedTime } from "./time.js";
 import { toCsv, downloadCsv } from "./csv.js";
 
 /* ---------- palette ----------
@@ -28,6 +28,13 @@ const DRINKS = {
   "Drip Coffee": [12, 1], "Cold Brew": [16, 1], "Iced Latte": [16, 2], "Iced Americano": [16, 2], Other: [8, 1],
 };
 const SIZES = [2, 4, 6, 8, 12, 16, 20];
+const isPreset = (name) => Object.keys(DRINKS).some((d) => d.toLowerCase() === name.trim().toLowerCase());
+/** Presets, then the drinks the two of you added, with Other last. */
+const drinkNames = (custom) => [...Object.keys(DRINKS).filter((d) => d !== "Other"), ...custom.map((d) => d.name), "Other"];
+const drinkDefaults = (name, custom) => {
+  const c = custom.find((d) => d.name === name);
+  return c ? [c.oz, c.shots] : DRINKS[name] || DRINKS.Other;
+};
 const durMin = (e) => (e.end - e.start) / 60000;
 const nameOf = (names, k) => names[k === "p1" ? 0 : 1];
 const tzOf = (settings, k) => settings?.tz?.[k] || deviceTz();
@@ -135,11 +142,12 @@ function Setup({ onSave }) {
 }
 
 /* ---------- Log tab ---------- */
-function LogTab({ me, names, active, entries, act, flash, onSaved }) {
+function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
   const mine = active[me];
   const otherKey = me === "p1" ? "p2" : "p1";
   const theirs = active[otherKey];
   const [drink, setDrink] = useState("Flat White");
+  const [customName, setCustomName] = useState("");
   const [oz, setOz] = useState(8);
   const [shots, setShots] = useState(2);
   const [past, setPast] = useState(false);
@@ -152,13 +160,21 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
   const [now, setNow] = useState(Date.now());
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [earlierAt, setEarlierAt] = useState("");
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const pick = (d) => { setDrink(d); setOz(DRINKS[d][0]); setShots(DRINKS[d][1]); };
+  const pick = (d) => { const [o, sh] = drinkDefaults(d, drinks); setDrink(d); setOz(o); setShots(sh); };
+  /* "Other" with a typed name becomes that drink, and the name is kept as a new button for both of you. */
+  const drinkName = drink === "Other" ? customName.trim() || "Other" : drink;
+  const rememberDrink = async () => {
+    if (drink !== "Other" || !customName.trim() || isPreset(customName)) return;
+    await act("addDrink", { name: customName.trim(), oz, shots });
+    setDrink(customName.trim()); setCustomName("");
+  };
 
   /* Runs one save at a time, so a double tap can't log the same coffee twice. */
   const once = (fn) => async () => {
@@ -168,7 +184,7 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
   };
 
   const start = once(async () => {
-    await act("startSip", me, { drink, oz, shots, start: Date.now(), tz: deviceTz() });
+    if (await act("startSip", me, { drink: drinkName, oz, shots, start: Date.now(), tz: deviceTz() })) await rememberDrink();
   });
 
   const makeEntry = (base, startMs, endMs, tz) => ({
@@ -176,12 +192,22 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
     start: startMs, end: endMs, rating, note: note.trim(), tz,
   });
 
-  const finish = once(async () => {
-    const endMs = Date.now();
+  const finishAt = async (endMs) => {
     if (await act("finishSip", me, makeEntry(mine, mine.start, endMs, mine.tz || deviceTz()))) {
-      setRating(0); setNote(""); setConfirmCancel(false);
+      setRating(0); setNote(""); setConfirmCancel(false); setEarlierAt("");
       flash(`Finished: ${mine.drink} in ${fmtDur((endMs - mine.start) / 60000)}`);
     }
+  };
+  const finish = once(() => finishAt(Date.now()));
+
+  /* For a sip left running: the chosen clock time, on the most recent day it has happened. */
+  const finishEarlier = once(async () => {
+    const tz = mine.tz || deviceTz();
+    const t0 = Date.now();
+    let t = zonedTime(dayKey(t0, tz), earlierAt, tz);
+    if (t > t0) t -= 86400000;
+    if (!earlierAt || isNaN(t) || t <= mine.start) { flash(`Pick a time after you started at ${fmtTime(mine.start, tz)}.`); return; }
+    await finishAt(t);
   });
 
   const cancel = once(async () => {
@@ -193,9 +219,10 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
     let e = new Date(`${date}T${et}`).getTime();
     if (!date || !st || !et || isNaN(s) || isNaN(e)) { flash("Pick a date, start time and finish time first."); return; }
     if (e <= s) e += 86400000;
-    if (await act("addEntry", makeEntry({ drink, oz, shots }, s, e, deviceTz()))) {
+    if (await act("addEntry", makeEntry({ drink: drinkName, oz, shots }, s, e, deviceTz()))) {
+      await rememberDrink();
       setRating(0); setNote(""); setPast(false);
-      flash(`Saved: ${drink}, ${fmtDur((e - s) / 60000)}`);
+      flash(`Saved: ${drinkName}, ${fmtDur((e - s) / 60000)}`);
       if (onSaved) onSaved();
     }
   });
@@ -214,12 +241,19 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
     </div>
   );
 
+  const theirClock = theirs && fmtClock(Math.max(0, Math.floor((now - theirs.start) / 1000)));
   const friendBanner = theirs && (
     <div style={{ ...card, background: C.latte, border: "none", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
       <span className="pulse" style={{ width: 10, height: 10, flex: "0 0 10px", borderRadius: 5, background: PCOL[otherKey] }} />
-      <span style={{ fontSize: 15 }}>
-        <b>{nameOf(names, otherKey)}</b> is sipping {theirs.drink} · {fmtClock(Math.max(0, Math.floor((now - theirs.start) / 1000)))}
-      </span>
+      {mine ? (
+        <span style={{ fontSize: 15 }}>
+          <b>Sipping together.</b> {nameOf(names, otherKey)} has a {theirs.drink} going too · {theirClock}
+        </span>
+      ) : (
+        <span style={{ fontSize: 15 }}>
+          <b>{nameOf(names, otherKey)}</b> is sipping {theirs.drink} · {theirClock}
+        </span>
+      )}
     </div>
   );
 
@@ -239,6 +273,22 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
           </div>
           <div style={{ color: C.dim, fontSize: 14 }}>Started {fmtTime(mine.start)}</div>
         </div>
+        {secs >= 3600 && (
+          <div style={{ ...card, background: C.latte, border: "none", marginTop: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Forgot to finish?</div>
+            <div style={{ fontSize: 14, color: C.dim, margin: "4px 0 10px" }}>
+              This sip has been running for {fmtDur(secs / 60)}. If you finished earlier, pick the time.
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <input type="time" value={earlierAt} onChange={(e) => setEarlierAt(e.target.value)} aria-label="Time you finished"
+                style={{ ...timeInput, marginTop: 0, flex: 1, minWidth: 0, borderColor: C.edge }} />
+              <button onClick={finishEarlier} disabled={busy || !earlierAt}
+                style={{ flex: "0 0 auto", minHeight: 48, padding: "0 16px", borderRadius: 12, border: "none", background: C.ink, color: C.oat, fontFamily: FONT, fontSize: 15, fontWeight: 600, cursor: "pointer", opacity: busy || !earlierAt ? 0.45 : 1 }}>
+                Finish then
+              </button>
+            </div>
+          </div>
+        )}
         <div style={label}>Rating (optional)</div>
         {ratingChips}
         {noteInput}
@@ -267,8 +317,13 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
 
       <div style={label}>Drink</div>
       <div style={row}>
-        {Object.keys(DRINKS).map((d) => <Chip key={d} on={drink === d} onClick={() => pick(d)}>{d}</Chip>)}
+        {drinkNames(drinks).map((d) => <Chip key={d} on={drink === d} onClick={() => pick(d)}>{d}</Chip>)}
       </div>
+      {drink === "Other" && (
+        <input value={customName} onChange={(e) => setCustomName(e.target.value)} maxLength={24}
+          placeholder="Name it, like Spanish Latte or Karak" aria-label="Drink name"
+          style={{ ...textInput, marginTop: 10, fontSize: 16, minHeight: 48 }} />
+      )}
 
       <div style={label}>Size (oz)</div>
       <div style={row}>
@@ -316,11 +371,89 @@ function LogTab({ me, names, active, entries, act, flash, onSaved }) {
   );
 }
 
+/* ---------- Entry editor ----------
+   Times are edited in the time zone the coffee was drunk in. */
+const selectInput = { ...timeInput, marginTop: 4, appearance: "auto" };
+function EntryEditor({ e, drinks, onSave, onCancel }) {
+  const tz = e.tz || deviceTz();
+  const [drink, setDrink] = useState(e.drink);
+  const [oz, setOz] = useState(e.oz);
+  const [shots, setShots] = useState(e.shots);
+  const [date, setDate] = useState(dayKey(e.start, tz));
+  const [st, setSt] = useState(fmtTime24(e.start, tz));
+  const [et, setEt] = useState(fmtTime24(e.end, tz));
+  const [rating, setRating] = useState(e.rating || 0);
+  const [note, setNote] = useState(e.note || "");
+  const [busy, setBusy] = useState(false);
+  const names = drinkNames(drinks).filter((d) => d !== "Other");
+  const options = names.includes(e.drink) ? names : [e.drink, ...names];
+  const field = { flex: 1, minWidth: 0, fontSize: 13, color: C.dim };
+
+  const save = async () => {
+    const start = zonedTime(date, st, tz);
+    let end = zonedTime(date, et, tz);
+    if (!date || !st || !et || isNaN(start) || isNaN(end)) return;
+    if (end <= start) end += 86400000;
+    setBusy(true);
+    await onSave({ ...e, drink, oz: Number(oz), shots: Number(shots), start, end, rating, note: note.trim() });
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ ...card, padding: 14, marginBottom: 8, borderColor: C.edge }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <label style={{ ...field, flex: 2 }}>Drink
+          <select value={drink} onChange={(ev) => setDrink(ev.target.value)} style={selectInput}>
+            {options.map((d) => <option key={d}>{d}</option>)}
+          </select>
+        </label>
+        <label style={field}>Oz
+          <select value={oz} onChange={(ev) => setOz(ev.target.value)} style={selectInput}>
+            {[...new Set([...SIZES, e.oz])].sort((a, b) => a - b).map((n) => <option key={n}>{n}</option>)}
+          </select>
+        </label>
+        <label style={field}>Shots
+          <select value={shots} onChange={(ev) => setShots(ev.target.value)} style={selectInput}>
+            {[...new Set([0, 1, 2, 3, 4, e.shots])].sort((a, b) => a - b).map((n) => <option key={n}>{n}</option>)}
+          </select>
+        </label>
+      </div>
+      <label style={{ ...field, display: "block", marginTop: 10 }}>Date
+        <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={timeInput} />
+      </label>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <label style={field}>Start
+          <input type="time" value={st} onChange={(ev) => setSt(ev.target.value)} style={timeInput} />
+        </label>
+        <label style={field}>Finish
+          <input type="time" value={et} onChange={(ev) => setEt(ev.target.value)} style={timeInput} />
+        </label>
+      </div>
+      {tz !== deviceTz() && <div style={{ fontSize: 12, color: C.dim, marginTop: 6 }}>Times are in {tzShort(tz, e.start)}, where this coffee was drunk.</div>}
+      <div style={{ ...label, margin: "14px 0 8px" }}>Rating</div>
+      <div style={row}>
+        {[1, 2, 3, 4, 5].map((n) => <Chip key={n} on={rating === n} onClick={() => setRating(rating === n ? 0 : n)}>{n}</Chip>)}
+      </div>
+      <input value={note} onChange={(ev) => setNote(ev.target.value)} placeholder="Note (optional)" maxLength={80} aria-label="Note"
+        style={{ ...timeInput, marginTop: 12 }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <Big tone="ghost" onClick={onCancel}>Cancel</Big>
+        <Big onClick={save} disabled={busy || !date || !st || !et}>Save</Big>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Entry row ---------- */
-function EntryRow({ e, names, onDelete }) {
+const textButton = { border: "none", background: "none", fontFamily: FONT, fontSize: 13, minHeight: 36, padding: "0 2px", cursor: "pointer" };
+function EntryRow({ e, names, drinks, onDelete, onUpdate }) {
   const [ask, setAsk] = useState(false);
+  const [editing, setEditing] = useState(false);
   const tz = e.tz || deviceTz();
   const zone = tz !== deviceTz() ? ` (${tzShort(tz, e.start)})` : "";
+  if (editing) {
+    return <EntryEditor e={e} drinks={drinks} onCancel={() => setEditing(false)} onSave={async (next) => { if (await onUpdate(next)) setEditing(false); }} />;
+  }
   return (
     <div style={{ ...card, padding: 12, display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
       <span style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: PCOL[e.who] }} />
@@ -337,13 +470,14 @@ function EntryRow({ e, names, onDelete }) {
       <div style={{ textAlign: "right" }}>
         <div style={{ fontWeight: 600, color: C.ink, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>{fmtDur(durMin(e))}</div>
         {ask ? (
-          <button onClick={() => onDelete(e)} style={{ border: "none", background: "none", color: C.espresso, fontFamily: FONT, fontWeight: 700, textDecoration: "underline", fontSize: 13, minHeight: 36, cursor: "pointer" }}>
+          <button onClick={() => onDelete(e)} style={{ ...textButton, color: C.espresso, fontWeight: 700, textDecoration: "underline" }}>
             Confirm delete
           </button>
         ) : (
-          <button onClick={() => setAsk(true)} aria-label={`Delete ${e.drink}`} style={{ border: "none", background: "none", color: C.dim, fontFamily: FONT, fontSize: 13, minHeight: 36, cursor: "pointer" }}>
-            Delete
-          </button>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+            <button onClick={() => setEditing(true)} aria-label={`Edit ${e.drink}`} style={{ ...textButton, color: C.dim }}>Edit</button>
+            <button onClick={() => setAsk(true)} aria-label={`Delete ${e.drink}`} style={{ ...textButton, color: C.dim }}>Delete</button>
+          </div>
         )}
       </div>
     </div>
@@ -351,7 +485,7 @@ function EntryRow({ e, names, onDelete }) {
 }
 
 /* ---------- Today tab ---------- */
-function TodayTab({ entries, names, settings, onDelete }) {
+function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
   const now = Date.now();
   const today = todays(settings, now);
   const mineToday = dayKey(now);
@@ -379,14 +513,14 @@ function TodayTab({ entries, names, settings, onDelete }) {
       {list.length === 0 ? (
         <div style={{ ...card, color: C.dim, textAlign: "center" }}>Nothing yet. Head to Log and start a sip.</div>
       ) : (
-        list.map((e) => <EntryRow key={e.id} e={e} names={names} onDelete={onDelete} />)
+        list.map((e) => <EntryRow key={e.id} e={e} names={names} drinks={drinks} onDelete={onDelete} onUpdate={onUpdate} />)
       )}
     </div>
   );
 }
 
 /* ---------- Week tab ---------- */
-function WeekTab({ entries, names, settings, saveNames, flash }) {
+function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, flash }) {
   /* The name fields follow saved changes from the other phone until you start typing. */
   const [draft, setDraft] = useState(null);
   const n1 = draft ? draft[0] : names[0];
@@ -418,6 +552,12 @@ function WeekTab({ entries, names, settings, saveNames, flash }) {
     return out;
   }, [wk, viewerToday, today.p1, today.p2]);
   const maxDay = Math.max(1, ...days.map((d) => Math.max(d.p1, d.p2)));
+
+  /* Coffees of yours and your friend's whose times overlapped. */
+  const together = useMemo(() => {
+    const a = wk.filter((e) => e.who === "p1"), b = wk.filter((e) => e.who === "p2");
+    return a.reduce((n, x) => n + b.filter((y) => x.start < y.end && y.start < x.end).length, 0);
+  }, [wk]);
 
   const byDrink = useMemo(() => {
     const m = {};
@@ -479,6 +619,13 @@ function WeekTab({ entries, names, settings, saveNames, flash }) {
         <span><span style={dot(PCOL.p2)} />{names[1]}</span>
       </div>
 
+      <div style={{ ...card, marginTop: 14, display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ fontSize: 28, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{together}</span>
+        <span style={{ fontSize: 14, color: C.dim }}>
+          {together === 1 ? "time you sipped together this week" : "times you sipped together this week"}
+        </span>
+      </div>
+
       <div style={label}>How long each drink takes</div>
       {byDrink.length === 0 ? (
         <div style={{ ...card, color: C.dim }}>Log a few coffees to compare drinks.</div>
@@ -501,6 +648,20 @@ function WeekTab({ entries, names, settings, saveNames, flash }) {
       <div style={{ height: 8 }} />
       <Big tone="ghost" disabled={!draft || !n1.trim() || !n2.trim() || n1.trim() === n2.trim()} onClick={save}>Save names</Big>
 
+      {drinks.length > 0 && (
+        <>
+          <div style={label}>Drinks you added</div>
+          <div style={card}>
+            {drinks.map((d, i) => (
+              <div key={d.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: i ? `1px solid ${C.rule}` : "none" }}>
+                <span>{d.name} <span style={{ color: C.dim, fontSize: 13 }}>{d.oz} oz · {plural(d.shots, "shot")}</span></span>
+                <button onClick={() => removeDrink(d.name)} aria-label={`Remove ${d.name}`} style={{ ...textButton, color: C.dim }}>Remove</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div style={label}>Take your data with you</div>
       <Big tone="ghost" onClick={download}>Download all coffees as CSV</Big>
       <div style={{ height: 10 }} />
@@ -517,17 +678,18 @@ function WeekTab({ entries, names, settings, saveNames, flash }) {
 /* ---------- App ---------- */
 export default function App() {
   const [ready, setReady] = useState(false);
-  const [data, setData] = useState({ settings: null, active: { p1: null, p2: null }, entries: [] });
+  const [data, setData] = useState({ settings: null, active: { p1: null, p2: null }, entries: [], drinks: [] });
   const [me, setMe] = useState(getMe);
   const [tab, setTab] = useState("log");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState(null);
   const [offlineSince, setOfflineSince] = useState(null);
   const toastTimer = useRef(null);
 
-  const flash = useCallback((m) => {
+  /* A toast can carry one action, such as Undo, and then stays up a little longer. */
+  const flash = useCallback((text, action) => {
     clearTimeout(toastTimer.current);
-    setToast(m);
-    toastTimer.current = setTimeout(() => setToast(""), 2600);
+    setToast({ text, action });
+    toastTimer.current = setTimeout(() => setToast(null), action ? 6000 : 2600);
   }, []);
 
   const load = useCallback(async () => {
@@ -538,7 +700,7 @@ export default function App() {
       setOfflineSince(null);
     } catch (e) {
       const cached = getCache();
-      setData((cur) => (cur.settings || !cached ? cur : cached.data));
+      setData((cur) => (cur.settings || !cached ? cur : { drinks: [], ...cached.data }));
       setOfflineSince((t) => t ?? (cached?.at || Date.now()));
     }
   }, []);
@@ -561,7 +723,7 @@ export default function App() {
   }, [load]);
 
   /* Keeps each person's time zone current, so "today" follows them when they travel. */
-  const { settings, active, entries } = data;
+  const { settings, active, entries, drinks = [] } = data;
   useEffect(() => {
     if (!ready || !me || !settings || offlineSince) return;
     if (settings.tz?.[me] !== deviceTz()) store.apply("setSettings", { ...settings, tz: { ...settings.tz, [me]: deviceTz() } }).then(load);
@@ -573,10 +735,19 @@ export default function App() {
     return ok;
   };
   const chooseMe = (k) => { setMe(k); saveMe(k); };
-  const deleteEntry = async (e) => { if (await act("deleteEntry", e)) flash("Deleted"); };
+  const deleteEntry = async (e) => {
+    if (!(await act("deleteEntry", e))) return;
+    flash(`Deleted ${e.drink}`, { label: "Undo", run: async () => { if (await act("restoreEntry", e)) flash(`Restored ${e.drink}`); } });
+  };
+  const updateEntry = async (e) => {
+    const ok = await act("updateEntry", e);
+    if (ok) flash("Changes saved");
+    return ok;
+  };
+  const removeDrink = async (name) => { if (await act("removeDrink", name)) flash(`Removed ${name}`); };
 
   const shell = (children) => (
-    <div style={{ fontFamily: FONT, background: C.oat, minHeight: "100vh", color: C.ink }}>
+    <div style={{ fontFamily: FONT, background: C.oat, minHeight: "100vh", color: C.ink, paddingTop: "env(safe-area-inset-top)" }}>
       <style>{`
         @keyframes steam { 0% { transform: translateY(2px); opacity: .3 } 50% { opacity: 1 } 100% { transform: translateY(-3px); opacity: .3 } }
         .steam path { animation: steam 2.2s ease-in-out infinite; }
@@ -635,20 +806,26 @@ export default function App() {
           Can't reach the coffee log right now, so you're seeing this phone's copy from {fmtTime(offlineSince)}. Saving works again once the connection is back.
         </div>
       )}
-      {tab === "log" && <LogTab me={me} names={names} active={active} entries={entries} act={act} flash={flash} onSaved={() => setTab("today")} />}
-      {tab === "today" && <TodayTab entries={entries} names={names} settings={settings} onDelete={deleteEntry} />}
-      {tab === "week" && <WeekTab entries={entries} names={names} settings={settings} saveNames={saveNames} flash={flash} />}
+      {tab === "log" && <LogTab me={me} names={names} active={active} entries={entries} drinks={drinks} act={act} flash={flash} onSaved={() => setTab("today")} />}
+      {tab === "today" && <TodayTab entries={entries} names={names} settings={settings} drinks={drinks} onDelete={deleteEntry} onUpdate={updateEntry} />}
+      {tab === "week" && <WeekTab entries={entries} names={names} settings={settings} drinks={drinks} saveNames={saveNames} removeDrink={removeDrink} flash={flash} />}
 
       {toast && (
-        <div role="status" style={{ position: "fixed", left: 16, right: 16, bottom: 92, maxWidth: 448, margin: "0 auto", background: C.ink, color: C.oat, padding: "12px 16px", borderRadius: 12, fontSize: 15, textAlign: "center" }}>
-          {toast}
+        <div role="status" style={{ position: "fixed", left: 16, right: 16, bottom: 92, maxWidth: 448, margin: "0 auto", background: C.ink, color: C.oat, padding: toast.action ? "4px 8px 4px 16px" : "12px 16px", borderRadius: 12, fontSize: 15, textAlign: toast.action ? "left" : "center", display: "flex", alignItems: "center", justifyContent: toast.action ? "space-between" : "center", gap: 12 }}>
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button onClick={() => { const { run } = toast.action; clearTimeout(toastTimer.current); setToast(null); run(); }}
+              style={{ minHeight: 44, padding: "0 12px", border: "none", background: "none", color: C.latte, fontFamily: FONT, fontSize: 15, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
 
       <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.oat, borderTop: `1px solid ${C.rule}`, display: "flex", justifyContent: "center", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ display: "flex", width: "100%", maxWidth: 480 }}>
           {tabs.map(([k, t]) => (
-            <button key={k} onClick={() => setTab(k)} aria-current={tab === k ? "page" : undefined} style={{
+            <button key={k} onClick={() => { setTab(k); load(); }} aria-current={tab === k ? "page" : undefined} style={{
               flex: 1, minHeight: 64, border: "none", background: "none", fontFamily: FONT, fontSize: 16,
               fontWeight: tab === k ? 600 : 500, color: tab === k ? C.ink : C.dim, cursor: "pointer",
               borderTop: `2px solid ${tab === k ? C.espresso : "transparent"}`,

@@ -49,3 +49,19 @@ export function fmtTime24(ms, tz) {
 export function tzShort(tz, ms = Date.now()) {
   return fmt(tz, { timeZoneName: "short" }).formatToParts(ms).find((p) => p.type === "timeZoneName")?.value ?? tz;
 }
+
+/** How far a time zone is ahead of UTC at a given instant, in ms. */
+function tzOffset(ms, tz) {
+  const parts = fmt(tz, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(ms);
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value);
+  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")) - Math.floor(ms / 1000) * 1000;
+}
+
+/** The instant a wall-clock date and time ("2026-10-21", "09:36") happened in a time zone. */
+export function zonedTime(key, hhmm, tz) {
+  const [y, m, d] = key.split("-").map(Number);
+  const [h, mi] = hhmm.split(":").map(Number);
+  const wall = Date.UTC(y, m - 1, d, h, mi);
+  const first = wall - tzOffset(wall, tz);
+  return wall - tzOffset(first, tz);
+}

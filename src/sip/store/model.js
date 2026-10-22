@@ -2,9 +2,12 @@
    settings: { names: [p1, p2], tz: { p1, p2 } }
    active:   { p1: sip | null, p2: sip | null }   sip = { drink, oz, shots, start, tz }
    entries:  [{ id, who, drink, oz, shots, start, end, rating, note, tz }]
+   drinks:   [{ name, oz, shots }]   drinks the two of you added beyond the presets
    Every backend loads this shape and applies the same named operations to it. */
 
-export const emptyState = () => ({ settings: null, active: { p1: null, p2: null }, entries: [] });
+export const emptyState = () => ({ settings: null, active: { p1: null, p2: null }, entries: [], drinks: [], trash: [] });
+
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export const ops = {
   setSettings: (s, settings) => ({ ...s, settings }),
@@ -12,11 +15,23 @@ export const ops = {
   cancelSip: (s, who) => ({ ...s, active: { ...s.active, [who]: null } }),
   finishSip: (s, who, entry) => ({
     ...s,
-    active: { ...s.active, [who]: null },
+    active: { ...s.active, [who]: s.active?.[who]?.start === entry.start ? null : s.active?.[who] ?? null },
     entries: [...s.entries.filter((e) => e.id !== entry.id), entry],
   }),
   addEntry: (s, entry) => ({ ...s, entries: [...s.entries.filter((e) => e.id !== entry.id), entry] }),
-  deleteEntry: (s, entry) => ({ ...s, entries: s.entries.filter((e) => e.id !== entry.id) }),
+  updateEntry: (s, entry) => ({ ...s, entries: s.entries.map((e) => (e.id === entry.id ? { ...entry, who: e.who } : e)) }),
+  deleteEntry: (s, entry) => ({
+    ...s,
+    entries: s.entries.filter((e) => e.id !== entry.id),
+    trash: [...(s.trash || []), ...s.entries.filter((e) => e.id === entry.id)],
+  }),
+  restoreEntry: (s, entry) => ({
+    ...s,
+    entries: [...s.entries, ...(s.trash || []).filter((e) => e.id === entry.id)],
+    trash: (s.trash || []).filter((e) => e.id !== entry.id),
+  }),
+  addDrink: (s, drink) => ({ ...s, drinks: [...(s.drinks || []).filter((d) => !sameName(d.name, drink.name)), drink] }),
+  removeDrink: (s, name) => ({ ...s, drinks: (s.drinks || []).filter((d) => !sameName(d.name, name)) }),
 };
 
 /** Sorts newest first, and hides a running sip that was already saved as an entry. */
@@ -28,7 +43,7 @@ export function normalize(raw) {
     const a = s.active?.[k];
     if (a && !entries.some((e) => e.who === k && e.start === a.start)) active[k] = a;
   }
-  return { settings: s.settings, active, entries };
+  return { settings: s.settings, active, entries, drinks: s.drinks || [] };
 }
 
 export const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;

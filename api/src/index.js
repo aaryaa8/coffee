@@ -4,7 +4,8 @@ import { SEED } from "./seed.js";
 /* ---------- Sip Log store ----------
    One Durable Object holds the whole shared log, keyed the same way the original
    artifact's storage was: "settings", "active:p1", "active:p2", "entry:<id>".
-   Deleted coffees move to "trash:<id>" so a mistaken delete can be recovered. */
+   Deleted coffees move to "trash:<id>" so a mistaken delete can be recovered, and
+   "drinks" holds the drink names the two of you added beyond the presets. */
 
 const ORIGINS = [
   /^https:\/\/coffee\.aaryaakamdar\.com$/,
@@ -34,6 +35,14 @@ function cleanEntry(v) {
   return { id: v.id, who: v.who, ...sip, end: v.end, rating: v.rating, note: v.note ?? "" };
 }
 
+const MAX_DRINKS = 16;
+function cleanDrink(v) {
+  const name = typeof v?.name === "string" ? v.name.trim() : "";
+  if (!name || name.length > 24 || !isNum(v.oz, 0, 64) || !isNum(v.shots, 0, 12)) return null;
+  return { name, oz: v.oz, shots: v.shots };
+}
+const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
+
 function cleanSettings(v) {
   const names = v?.names;
   if (!Array.isArray(names) || names.length !== 2 || !names.every((n) => isStr(n, 20) && n.trim())) return null;
@@ -62,13 +71,14 @@ export class SipLog extends DurableObject {
 
   async state() {
     const [fixed, entries] = await Promise.all([
-      this.ctx.storage.get(["settings", "active:p1", "active:p2"]),
+      this.ctx.storage.get(["settings", "active:p1", "active:p2", "drinks"]),
       this.ctx.storage.list({ prefix: "entry:" }),
     ]);
     return {
       settings: fixed.get("settings") ?? null,
       active: { p1: fixed.get("active:p1") ?? null, p2: fixed.get("active:p2") ?? null },
       entries: [...entries.values()],
+      drinks: fixed.get("drinks") ?? [],
     };
   }
 
@@ -105,6 +115,37 @@ export class SipLog extends DurableObject {
           const running = await s.get(`active:${who}`);
           if (running?.start === e.start) await s.delete(`active:${who}`);
         }
+        return { ok: true };
+      }
+      case "updateEntry": {
+        const e = cleanEntry(args[0]);
+        const current = e && (await s.get(`entry:${e.id}`));
+        if (!e || !current || current.who !== e.who) return bad("that coffee doesn't look right");
+        await s.put(`entry:${e.id}`, e);
+        return { ok: true };
+      }
+      case "restoreEntry": {
+        const id = args[0]?.id;
+        if (!isStr(id, 40)) return bad("unknown coffee");
+        const t = await s.get(`trash:${id}`);
+        if (t) {
+          const { deletedAt, ...e } = t;
+          await s.put(`entry:${id}`, e);
+          await s.delete(`trash:${id}`);
+        }
+        return { ok: true };
+      }
+      case "addDrink": {
+        const d = cleanDrink(args[0]);
+        if (!d) return bad("that drink name doesn't look right");
+        const list = ((await s.get("drinks")) || []).filter((x) => !sameName(x.name, d.name));
+        if (list.length >= MAX_DRINKS) return bad(`you already have ${MAX_DRINKS} of your own drinks`);
+        await s.put("drinks", [...list, d]);
+        return { ok: true };
+      }
+      case "removeDrink": {
+        if (!isStr(args[0], 24)) return bad("unknown drink");
+        await s.put("drinks", ((await s.get("drinks")) || []).filter((x) => !sameName(x.name, args[0])));
         return { ok: true };
       }
       case "deleteEntry": {
