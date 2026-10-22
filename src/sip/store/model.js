@@ -1,11 +1,11 @@
 /* ---------- data model ----------
-   settings: { names: [p1, p2], tz: { p1, p2 } }
-   active:   { p1: sip | null, p2: sip | null }   sip = { drink, oz, shots, start, tz }
-   entries:  [{ id, who, drink, oz, shots, start, end, rating, note, tz }]
+   settings: { names: [p1, p2, p3], tz: { p1, p2, p3 } }   p1 Aaryaa, p2 Maitha, p3 Viva
+   active:   { p1, p2, p3 }   each a sip or null; sip = { drink, oz, shots, milk, sweetener, start, tz }
+   entries:  [{ id, who, drink, oz, shots, milk, sweetener, start, end, rating, note, tz }]
    drinks:   [{ name, oz, shots }]   drinks the two of you added beyond the presets
    Every backend loads this shape and applies the same named operations to it. */
 
-export const emptyState = () => ({ settings: null, active: { p1: null, p2: null }, entries: [], drinks: [], trash: [] });
+export const emptyState = () => ({ settings: null, active: { p1: null, p2: null, p3: null }, entries: [], drinks: [], trash: [] });
 
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -38,8 +38,8 @@ export const ops = {
 export function normalize(raw) {
   const s = { ...emptyState(), ...raw };
   const entries = [...(s.entries || [])].sort((a, b) => b.start - a.start);
-  const active = { p1: null, p2: null };
-  for (const k of ["p1", "p2"]) {
+  const active = { p1: null, p2: null, p3: null };
+  for (const k of ["p1", "p2", "p3"]) {
     const a = s.active?.[k];
     if (a && !entries.some((e) => e.who === k && e.start === a.start)) active[k] = a;
   }

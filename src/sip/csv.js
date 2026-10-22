@@ -7,12 +7,12 @@ const q = (s) => {
   return `"${(FORMULA.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`;
 };
 
-export function toCsv(entries, names) {
-  const lines = ["Date,Who,Drink,Size (oz),Shots,Start time,Finish time,Time zone,Duration (min),Rating,Notes"];
+export function toCsv(entries, nameFor) {
+  const lines = ["Date,Who,Drink,Size (oz),Shots,Milk,Sweetener,Start time,Finish time,Time zone,Duration (min),Rating,Notes"];
   [...entries].sort((a, b) => a.start - b.start).forEach((e) => {
     const tz = e.tz || "UTC";
     lines.push([
-      dayKey(e.start, tz), q(names[e.who === "p1" ? 0 : 1]), q(e.drink), e.oz, e.shots,
+      dayKey(e.start, tz), q(nameFor(e.who)), q(e.drink), e.oz, e.shots, q(e.milk), q(e.sweetener),
       fmtTime24(e.start, tz), fmtTime24(e.end, tz), q(tz),
       Math.round(((e.end - e.start) / 60000) * 10) / 10, e.rating || "", q(e.note),
     ].join(","));

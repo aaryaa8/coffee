@@ -3,7 +3,8 @@ import { SEED } from "./seed.js";
 
 /* ---------- Sip Log store ----------
    One Durable Object holds the whole shared log, keyed the same way the original
-   artifact's storage was: "settings", "active:p1", "active:p2", "entry:<id>".
+   artifact's storage was: "settings", "active:p1", "active:p2", "active:p3", "entry:<id>".
+   p1 is Aaryaa, p2 Maitha and p3 Viva; each Sip Log page shows Aaryaa with one friend.
    Deleted coffees move to "trash:<id>" so a mistaken delete can be recovered, and
    "drinks" holds the drink names the two of you added beyond the presets. */
 
@@ -14,7 +15,7 @@ const ORIGINS = [
 ];
 
 /* ---------- validation ---------- */
-const WHO = new Set(["p1", "p2"]);
+const WHO = new Set(["p1", "p2", "p3"]);
 const isStr = (v, max) => typeof v === "string" && v.length <= max;
 const isNum = (v, lo, hi) => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
 const isTz = (v) => isStr(v, 64) && /^[A-Za-z0-9_+\-/]+$/.test(v);
@@ -23,7 +24,9 @@ const isTime = (v) => isNum(v, 1.5e12, 4e12);
 function cleanSip(v) {
   if (!v || !isStr(v.drink, 40) || !v.drink || !isNum(v.oz, 0, 64) || !isNum(v.shots, 0, 12) || !isTime(v.start)) return null;
   if (v.tz !== undefined && !isTz(v.tz)) return null;
-  return { drink: v.drink, oz: v.oz, shots: v.shots, start: v.start, tz: v.tz };
+  const milk = v.milk ?? "", sweetener = v.sweetener ?? "";
+  if (!isStr(milk, 24) || !isStr(sweetener, 24)) return null;
+  return { drink: v.drink, oz: v.oz, shots: v.shots, milk: milk.trim(), sweetener: sweetener.trim(), start: v.start, tz: v.tz };
 }
 
 function cleanEntry(v) {
@@ -45,7 +48,7 @@ const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
 
 function cleanSettings(v) {
   const names = v?.names;
-  if (!Array.isArray(names) || names.length !== 2 || !names.every((n) => isStr(n, 20) && n.trim())) return null;
+  if (!Array.isArray(names) || (names.length !== 2 && names.length !== 3) || !names.every((n) => isStr(n, 20) && n.trim())) return null;
   const tz = {};
   for (const k of WHO) {
     if (v.tz?.[k] === undefined) continue;
@@ -71,12 +74,12 @@ export class SipLog extends DurableObject {
 
   async state() {
     const [fixed, entries] = await Promise.all([
-      this.ctx.storage.get(["settings", "active:p1", "active:p2", "drinks"]),
+      this.ctx.storage.get(["settings", "active:p1", "active:p2", "active:p3", "drinks"]),
       this.ctx.storage.list({ prefix: "entry:" }),
     ]);
     return {
       settings: fixed.get("settings") ?? null,
-      active: { p1: fixed.get("active:p1") ?? null, p2: fixed.get("active:p2") ?? null },
+      active: { p1: fixed.get("active:p1") ?? null, p2: fixed.get("active:p2") ?? null, p3: fixed.get("active:p3") ?? null },
       entries: [...entries.values()],
       drinks: fixed.get("drinks") ?? [],
     };

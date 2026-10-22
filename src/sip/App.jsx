@@ -18,7 +18,15 @@ const C = {
   rule: "rgba(41, 36, 31, .14)",
   edge: "rgba(41, 36, 31, .30)",
 };
-const PCOL = { p1: C.espresso, p2: C.caramel };
+const PCOL = { p1: C.espresso, p2: C.caramel, p3: "#A8875F" };
+
+/* ---------- who this log is for ----------
+   One shared database holds three people. /sip/ is Aaryaa with Maitha and /sip/viva/ is Aaryaa
+   with Viva; each page shows only its own pair, while Aaryaa's coffees appear in both. */
+const FRIEND = /^\/sip\/viva(\/|$)/.test(location.pathname) ? "p3" : "p2";
+const PAIR = ["p1", FRIEND];
+const IDX = { p1: 0, p2: 1, p3: 2 };
+const DEFAULT_NAMES = { p1: "Aaryaa", p2: "Maitha", p3: "Viva" };
 const FONT = `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
 /* Anton for titles and big numbers; the system sans keeps buttons and small text easy to read. */
 const DISPLAY = { fontFamily: `"Anton", Impact, "Arial Narrow", sans-serif`, fontWeight: 400, letterSpacing: ".01em" };
@@ -33,16 +41,25 @@ const SIZES = [2, 4, 6, 8, 12, 16, 20];
 const isPreset = (name) => Object.keys(DRINKS).some((d) => d.toLowerCase() === name.trim().toLowerCase());
 /** Presets, then the drinks the two of you added, with Other last. */
 const drinkNames = (custom) => [...Object.keys(DRINKS).filter((d) => d !== "Other"), ...custom.map((d) => d.name), "Other"];
+const MILKS = ["Regular", "Oat", "Almond", "Soy"];
+const SWEETENERS = ["Sugar", "Honey", "Vanilla syrup"];
+const BLACK = new Set(["Espresso", "Double Espresso", "Americano", "Drip Coffee", "Cold Brew", "Iced Americano"]);
+const LAST_MILK = "sip:last-milk";
+const lastMilk = () => { try { return localStorage.getItem(LAST_MILK) || "Regular"; } catch { return "Regular"; } };
+/** "Oat milk · Honey", for a coffee's details line. */
+const extras = (c) => [c.milk && (/milk$/i.test(c.milk) ? c.milk : `${c.milk} milk`), c.sweetener].filter(Boolean).join(" · ");
+/** A chip row value ("None", a preset, or "Other" plus typed text) as the stored string. */
+const chosen = (value, other) => (value === "None" ? "" : value === "Other" ? other.trim() : value);
 const drinkDefaults = (name, custom) => {
   const c = custom.find((d) => d.name === name);
   return c ? [c.oz, c.shots] : DRINKS[name] || DRINKS.Other;
 };
 const durMin = (e) => (e.end - e.start) / 60000;
-const nameOf = (names, k) => names[k === "p1" ? 0 : 1];
+const nameOf = (names, k) => names?.[IDX[k]] || DEFAULT_NAMES[k];
 const tzOf = (settings, k) => settings?.tz?.[k] || deviceTz();
 const entryDay = (e) => dayKey(e.start, e.tz || deviceTz());
 /** Each person's own calendar date right now, in their own time zone. */
-const todays = (settings, now) => ({ p1: dayKey(now, tzOf(settings, "p1")), p2: dayKey(now, tzOf(settings, "p2")) });
+const todays = (settings, now) => Object.fromEntries(PAIR.map((k) => [k, dayKey(now, tzOf(settings, k))]));
 function fmtDur(min) {
   if (min == null || isNaN(min)) return "–";
   if (min < 1) return `${Math.max(1, Math.round(min * 60))} sec`;
@@ -75,6 +92,7 @@ function Chip({ on, children, onClick, wide }) {
   return (
     <button
       onClick={onClick}
+      aria-pressed={!!on}
       style={{
         minHeight: 44, padding: "0 14px", borderRadius: 999, fontFamily: FONT, fontSize: 15, fontWeight: 500,
         border: `1px solid ${on ? C.espresso : C.edge}`, background: on ? C.espresso : "transparent",
@@ -146,12 +164,16 @@ function Setup({ onSave }) {
 /* ---------- Log tab ---------- */
 function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
   const mine = active[me];
-  const otherKey = me === "p1" ? "p2" : "p1";
+  const otherKey = me === "p1" ? FRIEND : "p1";
   const theirs = active[otherKey];
   const [drink, setDrink] = useState("Flat White");
   const [customName, setCustomName] = useState("");
   const [oz, setOz] = useState(8);
   const [shots, setShots] = useState(2);
+  const [milk, setMilk] = useState(lastMilk);
+  const [milkOther, setMilkOther] = useState("");
+  const [sweet, setSweet] = useState("None");
+  const [sweetOther, setSweetOther] = useState("");
   const [past, setPast] = useState(false);
   const [date, setDate] = useState(() => dayKey(Date.now()));
   const hm = (ms) => new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -169,7 +191,16 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
     return () => clearInterval(t);
   }, []);
 
-  const pick = (d) => { const [o, sh] = drinkDefaults(d, drinks); setDrink(d); setOz(o); setShots(sh); };
+  /* Black drinks start with no milk; milky ones start with the milk used last on this phone. */
+  const pick = (d) => {
+    const [o, sh] = drinkDefaults(d, drinks);
+    setDrink(d); setOz(o); setShots(sh);
+    if (BLACK.has(d)) setMilk("None");
+    else if (isPreset(d) && d !== "Other") setMilk(lastMilk());
+  };
+  const milkName = chosen(milk, milkOther);
+  const sweetName = chosen(sweet, sweetOther);
+  const rememberMilk = () => { try { if (milkName) localStorage.setItem(LAST_MILK, MILKS.includes(milkName) ? milkName : "Regular"); } catch { /* ignore */ } };
   /* "Other" with a typed name becomes that drink, and the name is kept as a new button for both of you. */
   const drinkName = drink === "Other" ? customName.trim() || "Other" : drink;
   const rememberDrink = async () => {
@@ -186,11 +217,15 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
   };
 
   const start = once(async () => {
-    if (await act("startSip", me, { drink: drinkName, oz, shots, start: Date.now(), tz: deviceTz() })) await rememberDrink();
+    if (await act("startSip", me, { drink: drinkName, oz, shots, milk: milkName, sweetener: sweetName, start: Date.now(), tz: deviceTz() })) {
+      rememberMilk();
+      await rememberDrink();
+    }
   });
 
   const makeEntry = (base, startMs, endMs, tz) => ({
     id: newId(), who: me, drink: base.drink, oz: base.oz, shots: base.shots,
+    milk: base.milk || "", sweetener: base.sweetener || "",
     start: startMs, end: endMs, rating, note: note.trim(), tz,
   });
 
@@ -221,7 +256,8 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
     let e = new Date(`${date}T${et}`).getTime();
     if (!date || !st || !et || isNaN(s) || isNaN(e)) { flash("Pick a date, start time and finish time first."); return; }
     if (e <= s) e += 86400000;
-    if (await act("addEntry", makeEntry({ drink: drinkName, oz, shots }, s, e, deviceTz()))) {
+    if (await act("addEntry", makeEntry({ drink: drinkName, oz, shots, milk: milkName, sweetener: sweetName }, s, e, deviceTz()))) {
+      rememberMilk();
       await rememberDrink();
       setRating(0); setNote(""); setPast(false);
       flash(`Saved: ${drinkName}, ${fmtDur((e - s) / 60000)}`);
@@ -268,7 +304,7 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
         <div style={{ ...card, textAlign: "center", padding: "28px 16px" }}>
           <Cup steam size={72} />
           <div style={{ color: C.dim, fontSize: 15, marginTop: 4 }}>
-            {mine.drink} · {mine.oz} oz · {mine.shots} {mine.shots === 1 ? "shot" : "shots"}
+            {mine.drink} · {mine.oz} oz · {mine.shots} {mine.shots === 1 ? "shot" : "shots"}{extras(mine) ? ` · ${extras(mine)}` : ""}
           </div>
           <div style={{ ...DISPLAY, fontSize: 72, color: C.ink, fontVariantNumeric: "tabular-nums", margin: "6px 0" }}>
             {fmtClock(secs)}
@@ -317,8 +353,8 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
         {todayCount === 0 ? "No coffees logged today yet." : `${todayCount} ${todayCount === 1 ? "coffee" : "coffees"} logged today.`}
       </div>
 
-      <div style={label}>Drink</div>
-      <div style={row}>
+      <div style={label} id="lbl-drink">Drink</div>
+      <div style={row} role="group" aria-labelledby="lbl-drink">
         {drinkNames(drinks).map((d) => <Chip key={d} on={drink === d} onClick={() => pick(d)}>{d}</Chip>)}
       </div>
       {drink === "Other" && (
@@ -327,15 +363,33 @@ function LogTab({ me, names, active, entries, drinks, act, flash, onSaved }) {
           style={{ ...textInput, marginTop: 10, fontSize: 16, minHeight: 48 }} />
       )}
 
-      <div style={label}>Size (oz)</div>
-      <div style={row}>
+      <div style={label} id="lbl-size">Size (oz)</div>
+      <div style={row} role="group" aria-labelledby="lbl-size">
         {SIZES.map((s) => <Chip key={s} on={oz === s} onClick={() => setOz(s)}>{s}</Chip>)}
       </div>
 
-      <div style={label}>Shots of espresso</div>
-      <div style={row}>
+      <div style={label} id="lbl-shots">Shots of espresso</div>
+      <div style={row} role="group" aria-labelledby="lbl-shots">
         {[1, 2, 3, 4].map((s) => <Chip key={s} on={shots === s} onClick={() => setShots(s)}>{s}</Chip>)}
       </div>
+
+      <div style={label} id="lbl-milk">Milk</div>
+      <div style={row} role="group" aria-labelledby="lbl-milk">
+        {["None", ...MILKS, "Other"].map((m) => <Chip key={m} on={milk === m} onClick={() => setMilk(m)}>{m}</Chip>)}
+      </div>
+      {milk === "Other" && (
+        <input value={milkOther} onChange={(e) => setMilkOther(e.target.value)} maxLength={24} placeholder="Which milk? Coconut, cashew…" aria-label="Milk name"
+          style={{ ...textInput, marginTop: 10, fontSize: 16, minHeight: 48 }} />
+      )}
+
+      <div style={label} id="lbl-sweet">Sweetener</div>
+      <div style={row} role="group" aria-labelledby="lbl-sweet">
+        {["None", ...SWEETENERS, "Other"].map((m) => <Chip key={m} on={sweet === m} onClick={() => setSweet(m)}>{m}</Chip>)}
+      </div>
+      {sweet === "Other" && (
+        <input value={sweetOther} onChange={(e) => setSweetOther(e.target.value)} maxLength={24} placeholder="Which one? Caramel, maple…" aria-label="Sweetener name"
+          style={{ ...textInput, marginTop: 10, fontSize: 16, minHeight: 48 }} />
+      )}
 
       {past && (
         <div style={{ ...card, marginTop: 18 }}>
@@ -386,6 +440,8 @@ function EntryEditor({ e, drinks, onSave, onCancel }) {
   const [et, setEt] = useState(fmtTime24(e.end, tz));
   const [rating, setRating] = useState(e.rating || 0);
   const [note, setNote] = useState(e.note || "");
+  const [milk, setMilk] = useState(e.milk || "");
+  const [sweetener, setSweetener] = useState(e.sweetener || "");
   const [busy, setBusy] = useState(false);
   const names = drinkNames(drinks).filter((d) => d !== "Other");
   const options = names.includes(e.drink) ? names : [e.drink, ...names];
@@ -397,7 +453,7 @@ function EntryEditor({ e, drinks, onSave, onCancel }) {
     if (!date || !st || !et || isNaN(start) || isNaN(end)) return;
     if (end <= start) end += 86400000;
     setBusy(true);
-    await onSave({ ...e, drink, oz: Number(oz), shots: Number(shots), start, end, rating, note: note.trim() });
+    await onSave({ ...e, drink, oz: Number(oz), shots: Number(shots), milk: milk.trim(), sweetener: sweetener.trim(), start, end, rating, note: note.trim() });
     setBusy(false);
   };
 
@@ -419,6 +475,10 @@ function EntryEditor({ e, drinks, onSave, onCancel }) {
             {[...new Set([0, 1, 2, 3, 4, e.shots])].sort((a, b) => a - b).map((n) => <option key={n}>{n}</option>)}
           </select>
         </label>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <ChoiceField label="Milk" value={milk} onChange={setMilk} presets={MILKS} />
+        <ChoiceField label="Sweetener" value={sweetener} onChange={setSweetener} presets={SWEETENERS} />
       </div>
       <label style={{ ...field, display: "block", marginTop: 10 }}>Date
         <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={timeInput} />
@@ -446,6 +506,23 @@ function EntryEditor({ e, drinks, onSave, onCancel }) {
   );
 }
 
+/* A dropdown of presets with None and Other; Other opens a text box for any name. */
+function ChoiceField({ label: text, value, onChange, presets }) {
+  const [typing, setTyping] = useState(!!value && !presets.includes(value));
+  const sel = typing ? "__other" : value || "";
+  return (
+    <label style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.dim }}>{text}
+      <select value={sel} style={selectInput}
+        onChange={(ev) => { const v = ev.target.value; if (v === "__other") { setTyping(true); onChange(""); } else { setTyping(false); onChange(v); } }}>
+        <option value="">None</option>
+        {presets.map((p) => <option key={p} value={p}>{p}</option>)}
+        <option value="__other">Other…</option>
+      </select>
+      {typing && <input value={value} onChange={(ev) => onChange(ev.target.value)} maxLength={24} placeholder="Type it" aria-label={`${text} name`} style={timeInput} />}
+    </label>
+  );
+}
+
 /* ---------- Entry row ---------- */
 const textButton = { border: "none", background: "none", fontFamily: FONT, fontSize: 13, minHeight: 36, padding: "0 2px", cursor: "pointer" };
 function EntryRow({ e, names, drinks, onDelete, onUpdate }) {
@@ -462,7 +539,7 @@ function EntryRow({ e, names, drinks, onDelete, onUpdate }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 16 }}>{e.drink}</div>
         <div style={{ color: C.dim, fontSize: 13 }}>
-          {nameOf(names, e.who)} · {e.oz} oz · {e.shots} {e.shots === 1 ? "shot" : "shots"}
+          {nameOf(names, e.who)} · {e.oz} oz · {e.shots} {e.shots === 1 ? "shot" : "shots"}{extras(e) ? ` · ${extras(e)}` : ""}
         </div>
         <div style={{ color: C.dim, fontSize: 13 }}>
           {fmtTime(e.start, tz)} to {fmtTime(e.end, tz)}{zone}{e.rating ? ` · rated ${e.rating}/5` : ""}
@@ -495,11 +572,11 @@ function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: "flex", gap: 10 }}>
-        {["p1", "p2"].map((k, i) => {
+        {PAIR.map((k) => {
           const theirs = list.filter((e) => e.who === k);
           return (
             <div key={k} style={{ ...card, flex: 1, minWidth: 0 }}>
-              <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{names[i]}</div>
+              <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{nameOf(names, k)}</div>
               <div style={{ ...DISPLAY, fontSize: 40, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
               <div style={{ color: C.dim, fontSize: 13 }}>
                 {theirs.reduce((a, e) => a + e.oz, 0)} oz · {plural(theirs.reduce((a, e) => a + e.shots, 0), "shot")}
@@ -525,9 +602,9 @@ function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
 function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, flash }) {
   /* The name fields follow saved changes from the other phone until you start typing. */
   const [draft, setDraft] = useState(null);
-  const n1 = draft ? draft[0] : names[0];
-  const n2 = draft ? draft[1] : names[1];
-  const edit = (i, v) => setDraft((d) => { const next = [...(d || names)]; next[i] = v; return next; });
+  const n1 = draft ? draft[0] : nameOf(names, "p1");
+  const n2 = draft ? draft[1] : nameOf(names, FRIEND);
+  const edit = (i, v) => setDraft((d) => { const next = [...(d || [n1, n2])]; next[i] = v; return next; });
   const [csv, setCsv] = useState("");
 
   /* Seven calendar days per person, each ending on that person's own today. */
@@ -535,10 +612,10 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
   const today = todays(settings, now);
   const viewerToday = dayKey(now);
   const windows = useMemo(() => {
-    const w = { p1: new Set(), p2: new Set() };
-    for (let i = 0; i < 7; i++) { w.p1.add(shiftDay(today.p1, -i)); w.p2.add(shiftDay(today.p2, -i)); }
+    const w = Object.fromEntries(PAIR.map((k) => [k, new Set()]));
+    for (let i = 0; i < 7; i++) PAIR.forEach((k) => w[k].add(shiftDay(today[k], -i)));
     return w;
-  }, [today.p1, today.p2]);
+  }, [today.p1, today[FRIEND]]);
   const wk = useMemo(() => entries.filter((e) => windows[e.who].has(entryDay(e))), [entries, windows]);
 
   const days = useMemo(() => {
@@ -547,17 +624,16 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
       const key = shiftDay(viewerToday, -i);
       out.push({
         key, short: weekdayShort(key),
-        p1: wk.filter((e) => e.who === "p1" && entryDay(e) === shiftDay(today.p1, -i)).length,
-        p2: wk.filter((e) => e.who === "p2" && entryDay(e) === shiftDay(today.p2, -i)).length,
+        ...Object.fromEntries(PAIR.map((k) => [k, wk.filter((e) => e.who === k && entryDay(e) === shiftDay(today[k], -i)).length])),
       });
     }
     return out;
-  }, [wk, viewerToday, today.p1, today.p2]);
-  const maxDay = Math.max(1, ...days.map((d) => Math.max(d.p1, d.p2)));
+  }, [wk, viewerToday, today.p1, today[FRIEND]]);
+  const maxDay = Math.max(1, ...days.map((d) => Math.max(...PAIR.map((k) => d[k]))));
 
   /* Coffees of yours and your friend's whose times overlapped. */
   const together = useMemo(() => {
-    const a = wk.filter((e) => e.who === "p1"), b = wk.filter((e) => e.who === "p2");
+    const a = wk.filter((e) => e.who === "p1"), b = wk.filter((e) => e.who === FRIEND);
     return a.reduce((n, x) => n + b.filter((y) => x.start < y.end && y.start < x.end).length, 0);
   }, [wk]);
 
@@ -570,27 +646,30 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
   }, [wk]);
 
   const download = () => {
-    downloadCsv(toCsv(entries, names), `sip-log-${viewerToday}.csv`);
+    downloadCsv(toCsv(entries, (k) => nameOf(names, k)), `sip-log-${viewerToday}.csv`);
     flash("CSV downloaded.");
   };
   const copy = async () => {
-    const text = toCsv(entries, names);
+    const text = toCsv(entries, (k) => nameOf(names, k));
     setCsv(text);
     try { await navigator.clipboard.writeText(text); flash("Copied. Paste it into any spreadsheet."); } catch { flash("Select the text below and copy it."); }
   };
   const save = async () => {
-    if (await saveNames([n1.trim(), n2.trim()])) setDraft(null);
+    const full = ["p1", "p2", "p3"].map((k) => nameOf(names, k));
+    full[0] = n1.trim();
+    full[IDX[FRIEND]] = n2.trim();
+    if (await saveNames(full)) setDraft(null);
   };
 
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: "flex", gap: 10 }}>
-        {["p1", "p2"].map((k, i) => {
+        {PAIR.map((k) => {
           const theirs = wk.filter((e) => e.who === k);
           const durs = theirs.map(durMin);
           return (
             <div key={k} style={{ ...card, flex: 1, minWidth: 0 }}>
-              <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{names[i]}</div>
+              <div style={{ color: C.dim, fontSize: 14, fontWeight: 500 }}><span style={dot(PCOL[k])} />{nameOf(names, k)}</div>
               <div style={{ ...DISPLAY, fontSize: 40, fontVariantNumeric: "tabular-nums" }}>{theirs.length}</div>
               <div style={{ color: C.dim, fontSize: 13 }}>coffees this week</div>
               <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
@@ -608,7 +687,7 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
         {days.map((d) => (
           <div key={d.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 74 }}>
-              {["p1", "p2"].map((k) => (
+              {PAIR.map((k) => (
                 <div key={k} title={`${nameOf(names, k)}: ${d[k]}`} style={{ width: 10, height: (d[k] / maxDay) * 70 + (d[k] ? 4 : 0), background: PCOL[k], borderRadius: 2 }} />
               ))}
             </div>
@@ -617,8 +696,7 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
         ))}
       </div>
       <div style={{ display: "flex", gap: 14, fontSize: 13, color: C.dim, marginTop: 8 }}>
-        <span><span style={dot(PCOL.p1)} />{names[0]}</span>
-        <span><span style={dot(PCOL.p2)} />{names[1]}</span>
+        {PAIR.map((k) => <span key={k}><span style={dot(PCOL[k])} />{nameOf(names, k)}</span>)}
       </div>
 
       <div style={{ ...card, marginTop: 14, display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -680,8 +758,8 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
 /* ---------- App ---------- */
 export default function App() {
   const [ready, setReady] = useState(false);
-  const [data, setData] = useState({ settings: null, active: { p1: null, p2: null }, entries: [], drinks: [] });
-  const [me, setMe] = useState(getMe);
+  const [data, setData] = useState({ settings: null, active: { p1: null, p2: null, p3: null }, entries: [], drinks: [] });
+  const [me, setMe] = useState(() => { const m = getMe(FRIEND); return PAIR.includes(m) ? m : null; });
   const [tab, setTab] = useState("log");
   const [toast, setToast] = useState(null);
   const [offlineSince, setOfflineSince] = useState(null);
@@ -725,7 +803,8 @@ export default function App() {
   }, [load]);
 
   /* Keeps each person's time zone current, so "today" follows them when they travel. */
-  const { settings, active, entries, drinks = [] } = data;
+  const { settings, active, drinks = [] } = data;
+  const entries = useMemo(() => data.entries.filter((e) => PAIR.includes(e.who)), [data.entries]);
   useEffect(() => {
     if (!ready || !me || !settings || offlineSince) return;
     if (settings.tz?.[me] !== deviceTz()) store.apply("setSettings", { ...settings, tz: { ...settings.tz, [me]: deviceTz() } }).then(load);
@@ -736,7 +815,7 @@ export default function App() {
     if (ok) flash("Names saved");
     return ok;
   };
-  const chooseMe = (k) => { setMe(k); saveMe(k); };
+  const chooseMe = (k) => { setMe(k); saveMe(k, FRIEND); };
   const deleteEntry = async (e) => {
     if (!(await act("deleteEntry", e))) return;
     flash(`Deleted ${e.drink}`, { label: "Undo", run: async () => { if (await act("restoreEntry", e)) flash(`Restored ${e.drink}`); } });
@@ -779,9 +858,9 @@ export default function App() {
       <div style={{ padding: 20, textAlign: "center" }}>
         <div style={{ marginTop: 24 }}><Cup steam size={84} /></div>
         <h1 style={{ ...DISPLAY, fontSize: 44, color: C.ink, margin: "8px 0 20px" }}>Who's sipping?</h1>
-        <Big onClick={() => chooseMe("p1")}>{names[0]}</Big>
+        <Big onClick={() => chooseMe("p1")}>{nameOf(names, "p1")}</Big>
         <div style={{ height: 12 }} />
-        <Big tone="caramel" onClick={() => chooseMe("p2")}>{names[1]}</Big>
+        <Big tone="caramel" onClick={() => chooseMe(FRIEND)}>{nameOf(names, FRIEND)}</Big>
       </div>
     );
   }
@@ -796,13 +875,24 @@ export default function App() {
           <div style={{ fontSize: 13, color: C.dim }}>Logging as {nameOf(names, me)}</div>
         </div>
         <button
-          onClick={() => { setMe(null); saveMe(null); }}
+          onClick={() => { setMe(null); saveMe(null, FRIEND); }}
           style={{ minHeight: 40, padding: "0 12px", borderRadius: 12, border: `1px solid ${C.edge}`, background: "transparent", color: C.ink, fontFamily: FONT, fontSize: 13, cursor: "pointer" }}
         >
           Switch person
         </button>
       </div>
 
+      {me === "p1" && (
+        <nav aria-label="Whose log" style={{ display: "flex", gap: 6, margin: "12px 16px 0" }}>
+          {[["p2", "/sip/"], ["p3", "/sip/viva/"]].map(([k, href]) => (
+            <a key={k} href={href} aria-current={k === FRIEND ? "page" : undefined} onClick={() => saveMe("p1", k)}
+              style={{ flex: 1, textAlign: "center", padding: "9px 0", borderRadius: 999, fontSize: 14, textDecoration: "none",
+                border: `1px solid ${k === FRIEND ? C.espresso : C.edge}`, background: k === FRIEND ? C.espresso : "transparent", color: k === FRIEND ? C.oat : C.ink }}>
+              with {nameOf(names, k)}
+            </a>
+          ))}
+        </nav>
+      )}
       {offlineSince && (
         <div role="status" style={{ margin: "12px 16px 0", padding: "10px 14px", borderRadius: 12, background: C.latte, color: C.ink, fontSize: 13 }}>
           Can't reach the coffee log right now, so you're seeing this phone's copy from {fmtTime(offlineSince)}. Saving works again once the connection is back.
