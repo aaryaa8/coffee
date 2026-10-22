@@ -125,8 +125,7 @@ function render() {
 
   const cap = $("caption");
   if (!shown.length) cap.textContent = view === "all" ? "There are no coffees here yet, and the first one will start the first ring." : `There were no coffees in ${monthLabel(view)}.`;
-  else if (days.length === 1) cap.textContent = "Each ring is a day, and today's ring is the only one so far. Thicker arcs are bigger cups. Tap one to see the coffee.";
-  else cap.textContent = `Each ring is a day, from ${dateLabel(days[0])} at the center to ${days[days.length - 1] === today ? "today" : dateLabel(days[days.length - 1])} on the outside. Thicker arcs are bigger cups. Tap one to see the coffee.`;
+  else cap.textContent = "bean juice, bean juice";
   $("detail").textContent = "";
   renderCounts(shown.filter((c) => !c.running));
 }
