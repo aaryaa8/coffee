@@ -19,8 +19,13 @@
       .t { font-weight: 600; }
       .d { color: var(--dim); font-size: 14px; margin-top: 4px; }
       .go { color: var(--espresso); }
-      .bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 32px 0 4px; font-size: 13px; color: var(--dim); }
-      select { font: inherit; font-size: 15px; color: var(--ink); background: transparent; border: 1px solid var(--edge); border-radius: 999px; padding: 8px 14px; min-height: 40px; }
+      .bar { display: flex; justify-content: flex-end; margin: 32px 0 8px; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      select {
+        appearance: none; -webkit-appearance: none; font: inherit; font-size: 14px; line-height: 1; color: var(--ink);
+        border: 1px solid var(--edge); border-radius: 999px; min-height: 36px; padding: 0 34px 0 14px; cursor: pointer;
+        background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23654735' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center / 10px 7px;
+      }
       #rings svg { display: block; width: 100%; height: auto; }
       #rings path[role="button"] { cursor: pointer; outline: none; }
       .running { animation: pulse 1.6s ease-in-out infinite; }
@@ -47,13 +52,13 @@
       <a class="row" href="/sip/">
         <div>
           <div class="t">aaryaa and maitha's sip log</div>
-          <div class="d">A shared timer for how long each coffee lasts, kept by two friends in two time zones.</div>
+          <div class="d">started on october 21, 2026</div>
         </div>
         <span class="go" aria-hidden="true">→</span>
       </a>
 
       <div class="bar">
-        <label for="month">Showing</label>
+        <label for="month" class="sr">Showing</label>
         <select id="month"><option value="all">All time</option></select>
       </div>
       <figure id="rings" style="margin: 0"></figure>
