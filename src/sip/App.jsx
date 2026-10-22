@@ -588,7 +588,7 @@ export default function App() {
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 84 }}>
         {children}
         <footer style={{ padding: "24px 16px 16px", textAlign: "center", fontSize: 12, color: C.dim }}>
-          thanks to maitha for vibecoding this initially
+          thanks to maitha for vibecoding this
         </footer>
       </div>
     </div>
