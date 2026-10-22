@@ -585,7 +585,12 @@ export default function App() {
         button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid ${C.espresso}; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce) { .steam path, .pulse { animation: none } }
       `}</style>
-      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 84 }}>{children}</div>
+      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 84 }}>
+        {children}
+        <footer style={{ padding: "24px 16px 16px", textAlign: "center", fontSize: 12, color: C.dim }}>
+          thanks to maitha for vibecoding this initially
+        </footer>
+      </div>
     </div>
   );
 
