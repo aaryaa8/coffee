@@ -122,6 +122,8 @@ function Big({ children, onClick, tone = "green", disabled }) {
   );
 }
 
+/* The cup icon leads back to coffee.aaryaakamdar.com. */
+const homeLink = { display: "inline-flex", lineHeight: 0, borderRadius: 8 };
 const label = { fontSize: 13, fontWeight: 600, color: C.dim, margin: "22px 0 10px", letterSpacing: ".02em" };
 const row = { display: "flex", flexWrap: "wrap", gap: 8 };
 const card = { background: "transparent", borderRadius: 14, padding: 16, border: `1px solid ${C.rule}` };
@@ -834,14 +836,16 @@ export default function App() {
         .steam path { animation: steam 2.2s ease-in-out infinite; }
         .steam path:nth-child(2) { animation-delay: .4s } .steam path:nth-child(3) { animation-delay: .8s }
         @keyframes pulse { 50% { opacity: .3 } } .pulse { animation: pulse 1.6s ease-in-out infinite; }
-        button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid ${C.espresso}; outline-offset: 2px; }
+        button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid ${C.espresso}; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce) { .steam path, .pulse { animation: none } }
       `}</style>
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 84 }}>
         {children}
-        <footer style={{ padding: "24px 16px 16px", textAlign: "center", fontSize: 12, color: C.dim }}>
-          thanks to maitha for vibecoding this
-        </footer>
+        {FRIEND === "p2" && (
+          <footer style={{ padding: "24px 16px 16px", textAlign: "center", fontSize: 12, color: C.dim }}>
+            thanks to maitha for vibecoding this
+          </footer>
+        )}
       </div>
     </div>
   );
@@ -856,7 +860,7 @@ export default function App() {
   if (!me) {
     return shell(
       <div style={{ padding: 20, textAlign: "center" }}>
-        <div style={{ marginTop: 24 }}><Cup steam size={84} /></div>
+        <div style={{ marginTop: 24 }}><a href="/" aria-label="Back to coffee" style={homeLink}><Cup steam size={84} /></a></div>
         <h1 style={{ ...DISPLAY, fontSize: 44, color: C.ink, margin: "8px 0 20px" }}>Who's sipping?</h1>
         <Big onClick={() => chooseMe("p1")}>{nameOf(names, "p1")}</Big>
         <div style={{ height: 12 }} />
@@ -869,7 +873,7 @@ export default function App() {
   return shell(
     <>
       <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${C.rule}` }}>
-        <Cup steam={!!active[me]} size={36} />
+        <a href="/" aria-label="Back to coffee" style={homeLink}><Cup steam={!!active[me]} size={36} /></a>
         <div style={{ flex: 1 }}>
           <div style={{ ...DISPLAY, fontSize: 24, lineHeight: 1.1 }}>Sip Log</div>
           <div style={{ fontSize: 13, color: C.dim }}>Logging as {nameOf(names, me)}</div>
