@@ -632,6 +632,11 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
     return out;
   }, [wk, viewerToday, today.p1, today[FRIEND]]);
   const maxDay = Math.max(1, ...days.map((d) => Math.max(...PAIR.map((k) => d[k]))));
+  /* Whole-cup ticks: every cup up to 6, then about four evenly spaced steps. */
+  const PLOT = 96;
+  const step = maxDay <= 6 ? 1 : Math.ceil(maxDay / 4);
+  const top = Math.max(2, step * Math.ceil(maxDay / step));
+  const ticks = Array.from({ length: top / step + 1 }, (_, i) => i * step);
 
   /* Coffees of yours and your friend's whose times overlapped. */
   const together = useMemo(() => {
@@ -685,17 +690,34 @@ function WeekTab({ entries, names, settings, drinks, saveNames, removeDrink, fla
       </div>
 
       <div style={label}>Coffees per day</div>
-      <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "flex-end", height: 130, paddingTop: 20 }}>
-        {days.map((d) => (
-          <div key={d.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 74 }}>
-              {PAIR.map((k) => (
-                <div key={k} title={`${nameOf(names, k)}: ${d[k]}`} style={{ width: 10, height: (d[k] / maxDay) * 70 + (d[k] ? 4 : 0), background: PCOL[k], borderRadius: 2 }} />
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: C.dim }}>{d.short}</div>
+      <div style={{ ...card, paddingTop: 12 }}>
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>cups</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {/* y-axis: cups, in whole numbers */}
+          <div style={{ position: "relative", width: 18, height: PLOT, flex: "0 0 18px" }} aria-hidden="true">
+            {ticks.map((t) => (
+              <span key={t} style={{ position: "absolute", right: 0, bottom: (t / top) * PLOT, transform: "translateY(50%)", fontSize: 11, color: C.dim, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{t}</span>
+            ))}
           </div>
-        ))}
+          <div style={{ position: "relative", flex: 1, height: PLOT, display: "flex", alignItems: "flex-end" }}>
+            {ticks.map((t) => (
+              <div key={t} style={{ position: "absolute", left: 0, right: 0, bottom: (t / top) * PLOT, borderTop: `1px solid ${t === 0 ? C.edge : C.rule}` }} />
+            ))}
+            {days.map((d) => (
+              <div key={d.key} style={{ position: "relative", flex: 1, display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 3, height: "100%" }}>
+                {PAIR.map((k) => (
+                  <div key={k} title={`${nameOf(names, k)}: ${plural(d[k], "cup")}`} style={{ width: 10, height: (d[k] / top) * PLOT, background: PCOL[k], borderRadius: "2px 2px 0 0" }} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          <div style={{ width: 18, flex: "0 0 18px" }} />
+          <div style={{ flex: 1, display: "flex" }}>
+            {days.map((d) => <div key={d.key} style={{ flex: 1, textAlign: "center", fontSize: 11, color: C.dim }}>{d.short}</div>)}
+          </div>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 14, fontSize: 13, color: C.dim, marginTop: 8 }}>
         {PAIR.map((k) => <span key={k}><span style={dot(PCOL[k])} />{nameOf(names, k)}</span>)}
