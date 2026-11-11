@@ -566,13 +566,37 @@ function EntryRow({ e, names, drinks, onDelete, onUpdate }) {
 }
 
 /* ---------- Today tab ---------- */
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
+const navButton = {
+  width: 44, height: 44, flex: "0 0 44px", borderRadius: 999, border: `1px solid ${C.edge}`, background: "transparent",
+  color: C.ink, fontFamily: FONT, fontSize: 20, lineHeight: 1, cursor: "pointer",
+};
+
+/* Today by default; the arrows and the date pill step back to any earlier day, where every coffee can be edited.
+   Days line up per person, so "3 days ago" is three days before each person's own today. */
 function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
+  const [back, setBack] = useState(0);
   const now = Date.now();
   const today = todays(settings, now);
   const mineToday = dayKey(now);
-  const list = entries.filter((e) => entryDay(e) === today[e.who]);
+  const viewDay = shiftDay(mineToday, -back);
+  const day = Object.fromEntries(PAIR.map((k) => [k, shiftDay(today[k], -back)]));
+  const list = entries.filter((e) => entryDay(e) === day[e.who]);
+  const maxBack = entries.reduce((m, e) => Math.max(m, daysBetween(entryDay(e), today[e.who])), 0);
+  const title = back === 0 ? "Today" : back === 1 ? "Yesterday" : dateLabel(viewDay);
   return (
     <div style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <button aria-label="Previous day" onClick={() => setBack((b) => b + 1)} disabled={back >= maxBack} style={{ ...navButton, opacity: back >= maxBack ? 0.35 : 1 }}>‹</button>
+        <label style={{ flex: 1, position: "relative", display: "flex", justifyContent: "center", alignItems: "center", gap: 8, minHeight: 44, borderRadius: 999, border: `1px solid ${C.edge}`, cursor: "pointer" }}>
+          <span style={{ ...DISPLAY, fontSize: 22, lineHeight: 1 }}>{title}</span>
+          <svg width="10" height="7" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke={C.espresso} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <input type="date" aria-label="Pick a day" value={viewDay} max={mineToday}
+            onChange={(ev) => { if (ev.target.value) setBack(Math.min(Math.max(0, daysBetween(ev.target.value, mineToday)), Math.max(maxBack, 0))); }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
+        </label>
+        <button aria-label="Next day" onClick={() => setBack((b) => Math.max(0, b - 1))} disabled={back === 0} style={{ ...navButton, opacity: back === 0 ? 0.35 : 1 }}>›</button>
+      </div>
       <div style={{ display: "flex", gap: 10 }}>
         {PAIR.map((k) => {
           const theirs = list.filter((e) => e.who === k);
@@ -583,16 +607,16 @@ function TodayTab({ entries, names, settings, drinks, onDelete, onUpdate }) {
               <div style={{ color: C.dim, fontSize: 13 }}>
                 {theirs.reduce((a, e) => a + e.oz, 0)} oz · {plural(theirs.reduce((a, e) => a + e.shots, 0), "shot")}
               </div>
-              {today[k] !== mineToday && (
-                <div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>Their today: {dateLabel(today[k])}</div>
+              {day[k] !== viewDay && (
+                <div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{back === 0 ? "Their today" : "Their day"}: {dateLabel(day[k])}</div>
               )}
             </div>
           );
         })}
       </div>
-      <div style={label}>Today's coffees</div>
+      <div style={label}>{back === 0 ? "Today's coffees" : `Coffees on ${dateLabel(viewDay)}`}</div>
       {list.length === 0 ? (
-        <div style={{ ...card, color: C.dim, textAlign: "center" }}>Nothing yet. Head to Log and start a sip.</div>
+        <div style={{ ...card, color: C.dim, textAlign: "center" }}>{back === 0 ? "Nothing yet. Head to Log and start a sip." : "No coffees on this day."}</div>
       ) : (
         list.map((e) => <EntryRow key={e.id} e={e} names={names} drinks={drinks} onDelete={onDelete} onUpdate={onUpdate} />)
       )}
